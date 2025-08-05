@@ -1,106 +1,166 @@
-import requests
-import pandas as pd
-from openpyxl import load_workbook
+# VirusTotal IOC Automation Tool
 
-# === CONFIGURATION ===
-VT_API_KEY = 'API_KEY'  # <-- Replace this with your actual API key
-FILE1_PATH = 'File1.xlsx'
-FILE2_PATH = 'File2.xlsx'
+An automated Python solution for processing and analyzing Indicators of Compromise (IOCs) using the VirusTotal API. This tool streamlines threat intelligence workflows by automatically categorizing file hashes, IP addresses, and CVEs based on Palo Alto Networks XDR detection capabilities.
 
-def vt_lookup(hash_value):
-    url = f"https://www.virustotal.com/api/v3/files/{hash_value}"
-    headers = {"x-apikey": VT_API_KEY}
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200:
-        data = r.json()
-        attributes = data.get("data", {}).get("attributes", {})
-        analysis = attributes.get("last_analysis_results", {})
-        
-        # Use the correct engine name: "Paloalto" (not "Palo Alto Networks")
-        palo_alto_result = analysis.get("Paloalto", {})
-        
-        # Try both 'category' and 'result' fields
-        verdict = palo_alto_result.get("category", palo_alto_result.get("result", "Not Found"))
-        detected = attributes.get("last_analysis_stats", {}).get("malicious", 0) > 0
+## 🎯 Overview
 
-        return {
-            "sha256": attributes.get("sha256", "N/A"),
-            "sha1": attributes.get("sha1", "N/A"),
-            "md5": attributes.get("md5", "N/A"),
-            "detected": detected,
-            "palo_verdict": verdict
-        }
-    elif r.status_code == 404:
-        return {"not_found": True}
-    else:
-        return {"error": True, "code": r.status_code}
+The VirusTotal IOC Automation Tool eliminates manual IOC analysis by automatically processing mixed security indicators and organizing them into actionable threat intelligence categories. It integrates seamlessly with Palo Alto Networks XDR to determine coverage gaps and prioritize security responses.
 
-def insert_into_table(ws, row_data):
-    # Find the table headers (MD5, SHA1, SHA256) in the sheet
-    header_row = None
-    for row in range(1, ws.max_row + 1):
-        if (ws[f"B{row}"].value == "MD5" and 
-            ws[f"C{row}"].value == "SHA1" and 
-            ws[f"D{row}"].value == "SHA256"):
-            header_row = row
-            break
-    
-    if header_row is None:
-        print("Warning: Could not find table headers (MD5, SHA1, SHA256) in the sheet")
-        return
-    
-    # Find the first empty row after the headers
-    data_start_row = header_row + 1
-    row = data_start_row
-    while ws[f"B{row}"].value is not None and ws[f"B{row}"].value != "":
-        row += 1
-    
-    # Insert data into the table
-    ws[f"B{row}"] = row_data["md5"]
-    ws[f"C{row}"] = row_data["sha1"] 
-    ws[f"D{row}"] = row_data["sha256"]
+## ✨ Key Features
 
-def main():
-    df = pd.read_excel(FILE2_PATH, header=None)
-    hashes = df[0].dropna().tolist()
+- **🔍 Multi-IOC Support**: Processes file hashes (MD5/SHA1/SHA256), IP addresses, and CVE identifiers
+- **🤖 Intelligent Categorization**: Automatically routes IOCs based on Palo Alto Networks XDR coverage
+- **📊 Excel Integration**: Seamless input/output via Excel spreadsheets
+- **⚡ Bulk Processing**: Handles mixed IOC types in a single batch operation
+- **🛡️ XDR Gap Analysis**: Identifies threats not covered by current XDR deployment
+- **📈 Threat Intelligence**: Generates organized reports for security teams
 
-    wb = load_workbook(FILE1_PATH)
-    
-    # Access the three sheets
-    sheet1 = wb['Sheet1']  # Malware covered by XDR (Palo Alto detects as malicious)
-    sheet2 = wb['Sheet2']  # Not found or clean
-    sheet3 = wb['Sheet3']  # Malware not covered by XDR (Palo Alto doesn't detect as malicious)
+## 🏗️ Architecture
 
-    for h in hashes:
-        print(f"Checking: {h}")
-        result = vt_lookup(h)
+```
+File2.xlsx (Input) → IOC Detection → VirusTotal API → Palo Alto Analysis → Categorized Output (File1_filled.xlsx)
+```
 
-        if "error" in result:
-            print(f"Error: {result['code']} for hash {h}")
-            continue
-        if "not_found" in result:
-            # Hash not found on VirusTotal - goes to Sheet2
-            insert_into_table(sheet2, {"md5": "N/A", "sha1": "N/A", "sha256": h})
-            print(f"  → Sheet2: Not found on VirusTotal")
-            continue
+## 🚀 Quick Start
 
-        if result["detected"]:
-            verdict = result["palo_verdict"]
-            if verdict != "Not Found" and verdict != "N/A":
-                # Malware detected AND Palo Alto has a verdict - goes to Sheet3 (not covered by XDR)
-                insert_into_table(sheet3, result)
-                print(f"  → Sheet3: Malware not covered by XDR (Palo Alto verdict: {verdict})")
-            else:
-                # Malware detected BUT Palo Alto doesn't have a verdict - goes to Sheet1 (covered by XDR)
-                insert_into_table(sheet1, result)
-                print(f"  → Sheet1: Malware covered by XDR (Palo Alto verdict: {verdict})")
-        else:
-            # Clean hash (not detected as malware) - goes to Sheet2
-            insert_into_table(sheet2, result)
-            print(f"  → Sheet2: Clean hash")
+### Prerequisites
 
-    wb.save("File1_filled.xlsx")
-    print("✅ Done. Output saved to File1_filled.xlsx")
+```bash
+pip install requests pandas openpyxl
+```
 
-if __name__ == "__main__":
-    main()
+### Setup
+
+1. **Get VirusTotal API Key**
+   - Sign up at [VirusTotal](https://www.virustotal.com/gui/join-us)
+   - Generate your API key
+
+2. **Configure the Tool**
+   ```python
+   # Update in run.py
+   VT_API_KEY = 'your_virustotal_api_key_here'
+   ```
+
+3. **Prepare Input File**
+   - Add IOCs to column A in `File2.xlsx`
+   - Supports mixed formats (hashes, IPs, CVEs)
+
+### Usage
+
+```bash
+python run.py
+```
+
+## 📊 IOC Processing Logic
+
+### 🔐 File Hash Analysis
+```
+Hash Input → VirusTotal Lookup → Palo Alto Verdict Check
+├── Malicious + PA Detects → Sheet1 (XDR Covered)
+├── Malicious + PA Misses → Sheet3 (Coverage Gap)
+└── Clean/Unknown → Sheet2 (No Action Needed)
+```
+
+### 🌐 IP Address Analysis
+```
+IP Input → VirusTotal Reputation → Palo Alto Engine Check
+└── All IPs → DomainIP Sheet (with verdict classification)
+```
+
+### 🚨 CVE Processing
+```
+CVE Input → Direct Cataloging → CVE Sheet (No analysis required)
+```
+
+## 📋 Output Categories
+
+### XDR Coverage Analysis
+| Sheet | Category | Description |
+|-------|----------|-------------|
+| **Sheet1** | 🛡️ **XDR Covered** | Threats detected by Palo Alto XDR |
+| **Sheet2** | ✅ **Clean/Unknown** | Non-malicious or unfound IOCs |
+| **Sheet3** | ⚠️ **Coverage Gap** | Malicious IOCs missed by XDR |
+| **DomainIP** | 🌐 **IP Intelligence** | All IP addresses with verdicts |
+| **CVE** | 🚨 **Vulnerabilities** | CVE identifiers for tracking |
+
+### Verdict Classifications
+- **"Malware Covered by XDR"** - Threats your XDR will catch
+- **"Malware Not Covered by XDR"** - Security gaps requiring attention
+- **"Clean"** - Legitimate resources
+- **"Not Found"** - Unknown IOCs requiring investigation
+
+## 🔧 Configuration
+
+### Input Format (File2.xlsx)
+Place IOCs in Column A - the tool auto-detects formats:
+
+```
+Column A Examples:
+5d41402abc4b2a76b9719d911017c592        # MD5 Hash
+356a192b7913b04c54574d18c28d46e6395428ab  # SHA1 Hash
+e3b0c44298fc1c149afbf4c8996fb924...        # SHA256 Hash
+192.168.1.1                              # IP Address
+2001:db8::1                              # IPv6 Address
+CVE-2023-1234                            # CVE Identifier
+random_string_not_hash                   # Treated as unknown hash
+```
+
+### API Configuration
+The tool uses VirusTotal API v3 endpoints:
+- **Files**: `/files/{hash}` for hash analysis
+- **IPs**: `/ip_addresses/{ip}` for reputation data
+- **Engine Focus**: Specifically monitors "Paloalto" engine verdicts
+
+## 📈 Sample Output
+
+```bash
+Checking: 5d41402abc4b2a76b9719d911017c592
+  → Sheet3: Malware not covered by XDR (Palo Alto verdict: Not Found)
+
+Checking: 192.168.1.100
+  → DomainIP: Malicious IP covered by XDR (Palo Alto verdict: malicious)
+
+Checking: CVE-2023-0001
+  → CVE: Added to CVE sheet
+
+✅ Done. Output saved to File1_filled.xlsx
+```
+
+## 🛠️ Advanced Features
+
+### Error Handling
+- **Rate Limiting**: Respects VirusTotal API constraints
+- **Network Issues**: Graceful handling of connection problems
+- **Invalid IOCs**: Unknown formats treated appropriately
+- **Missing Data**: Comprehensive logging for troubleshooting
+
+## 🔍 Use Cases
+
+### Security Operations Center (SOC)
+- **Threat Hunting**: Bulk IOC validation from threat feeds
+- **Incident Response**: Quick analysis of compromise indicators
+- **Coverage Assessment**: Identify XDR detection gaps
+
+### Threat Intelligence Teams
+- **Feed Processing**: Automated analysis of intelligence feeds
+- **IOC Enrichment**: Add context to raw indicators
+- **Report Generation**: Create categorized threat reports
+
+### Red Team / Penetration Testing
+- **Tool Validation**: Test XDR detection capabilities
+- **Coverage Testing**: Identify security blind spots
+- **Baseline Assessment**: Document current detection posture
+
+## ⚠️ Important Notes
+
+### Security Considerations
+- **API Key Protection**: Store API keys securely, never commit to version control
+- **Rate Limiting**: Free VirusTotal accounts have request limits
+- **Data Sensitivity**: IOCs may contain sensitive threat intelligence
+
+### Performance Tips
+- **Batch Size**: Process IOCs in reasonable batches to avoid timeouts
+- **Network Stability**: Ensure stable internet connection for API calls
+- **Disk Space**: Large outputs may require adequate storage
+
+**Built for Security Teams** | **Powered by VirusTotal** | **Optimized for Palo Alto XDR**
